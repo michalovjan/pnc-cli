@@ -240,7 +240,7 @@ class ConfigReader:
             section_config['downstreamjobs'] = None
         if parser.has_option(section, 'jobtimeout'):
             section_config['jobtimeout'] = parser.getint(section, 'jobtimeout')
-        else:
+        elif parser.has_option('common', 'jobtimeout'):
             section_config['jobtimeout'] = parser.getint('common', 'jobtimeout')
         options = {}
         section_config['options'] = options
@@ -375,58 +375,60 @@ class ConfigReader:
         pom_manipulator_config = {}
         common_section = {}
         package_configs = {}
+        common_section['options'] = {}
+        common_section['options']['properties'] = {}
+        common_section['options']['profiles'] = []
 
         if pommanipext and pommanipext != '' and pommanipext != 'None': #TODO ref: remove none check, it is passed over cmd line in jenkins build
             parse_pom_manipulator_ext(pom_manipulator_config, parser, pommanipext)
 
-        if not parser.has_section('common'):
-            logging.error('Mandatory common section missing from configuration file.')
-            raise NoSectionError, 'Mandatory common section missing from configuration file.'
-        common_section['tag'] = parser.get('common', 'tag')
-        common_section['target'] = parser.get('common', 'target')
-        common_section['jobprefix'] = parser.get('common', 'jobprefix')
-        common_section['jobciprefix'] = parser.get('common', 'jobciprefix')
-        common_section['jobjdk'] = parser.get('common', 'jobjdk')
-        if parser.has_option('common', 'mvnver'):
-            common_section['mvnver'] = parser.get('common', 'mvnver')
-        if parser.has_option('common', 'skiptests'):
-            common_section['skiptests'] = parser.get('common', 'skiptests')
-        if parser.has_option('common', 'base'):
-            common_section['base'] = parser.get('common', 'base')
-        if parser.has_option('common', 'citemplate'):
-            common_section['citemplate'] = parser.get('common', 'citemplate')
-        if parser.has_option('common', 'jenkinstemplate'):
-            common_section['jenkinstemplate'] = parser.get('common', 'jenkinstemplate')
-        if parser.has_option('common', 'product_name'):
-            common_section['product_name'] = parser.get('common', 'product_name')
+        if parser.has_section('common'):
+            if parser.has_option('common', 'tag'):
+                common_section['tag'] = parser.get('common', 'tag')
+            if parser.has_option('common', 'target'):
+                common_section['target'] = parser.get('common', 'target')
+            if parser.has_option('common', 'jobprefix'):
+                common_section['jobprefix'] = parser.get('common', 'jobprefix')
+            if parser.has_option('common', 'jobciprefix'):
+                common_section['jobciprefix'] = parser.get('common', 'jobciprefix')
+            if parser.has_option('common', 'jobjdk'):
+                common_section['jobjdk'] = parser.get('common', 'jobjdk')
+            if parser.has_option('common', 'mvnver'):
+                common_section['mvnver'] = parser.get('common', 'mvnver')
+            if parser.has_option('common', 'skiptests'):
+                common_section['skiptests'] = parser.get('common', 'skiptests')
+            if parser.has_option('common', 'base'):
+                common_section['base'] = parser.get('common', 'base')
+            if parser.has_option('common', 'citemplate'):
+                common_section['citemplate'] = parser.get('common', 'citemplate')
+            if parser.has_option('common', 'jenkinstemplate'):
+                common_section['jenkinstemplate'] = parser.get('common', 'jenkinstemplate')
+            if parser.has_option('common', 'product_name'):
+                common_section['product_name'] = parser.get('common', 'product_name')
 
-        if parser.has_option('common', 'include'):
-            common_section['include'] = parser.get('common', 'include')
+            if parser.has_option('common', 'include'):
+                common_section['include'] = parser.get('common', 'include')
 
-        common_section['jobfailureemail'] = parser.get('common', 'jobfailureemail')
+            if parser.has_option('common', 'jobfailureemail'):
+                common_section['jobfailureemail'] = parser.get('common', 'jobfailureemail')
 
-        config_dir = utils.get_dir(config_file)
+            config_dir = utils.get_dir(config_file)
 
-        #Jira
-        if parser.has_option('common', 'shared_config') and parser.get('common', 'shared_config') is not "":
-            parse_shared_config(common_section, config_dir, parser)
+            #Jira
+            if parser.has_option('common', 'shared_config') and parser.get('common', 'shared_config') is not "":
+                parse_shared_config(common_section, config_dir, parser)
+            if parser.has_option('jobtimeout', 'jobfailureemail'):
+                common_section['jobtimeout'] = parser.getint('common', 'jobtimeout')
 
-        common_section['jobtimeout'] = parser.getint('common', 'jobtimeout')
+            # If the configuration file has global properties insert these into the common properties map.
+            # These may be overridden later by particular properties.
+            if parser.has_option('common', 'globalproperties'):
+                common_section['options']['properties'] = dict(x.strip().split('=') for x in parser.get('common', 'globalproperties').replace(",\n", ",").split(','))
 
-        common_section['options'] = {}
-        # If the configuration file has global properties insert these into the common properties map.
-        # These may be overridden later by particular properties.
-        if parser.has_option('common', 'globalproperties'):
-            common_section['options']['properties'] = dict(x.strip().split('=') for x in parser.get('common', 'globalproperties').replace(",\n", ",").split(','))
-        else:
-            # Always ensure properties has a valid dictionary so code below doesn't need multiple checks.
-            common_section['options']['properties'] = {}
-        # The same for global profiles
-        if parser.has_option('common', 'globalprofiles'):
-            common_section['options']['profiles'] = [x.strip() for x in parser.get('common', 'globalprofiles').split(',')]
-        else:
-            # Always ensure profiles has a valid list so code below doesn't need multiple checks.
-            common_section['options']['profiles'] = []
+            # The same for global profiles
+            if parser.has_option('common', 'globalprofiles'):
+                common_section['options']['profiles'] = [x.strip() for x in parser.get('common', 'globalprofiles').split(',')]
+
 
         if os.path.dirname(config_file):
             config_path = os.path.dirname(config_file)
