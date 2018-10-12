@@ -6,9 +6,9 @@ import re
 import string
 from ConfigParser import ConfigParser, NoOptionError, NoSectionError, DuplicateSectionError
 
-import utils
-from scm_utils import ScmInfo, get_scm_info
-from tasks import Tasks
+import pnc_cli.tools.utils as utils
+from pnc_cli.tools.scm_utils import ScmInfo, get_scm_info
+from pnc_cli.tools.tasks import Tasks
 
 
 def get_config_option(params, option):
@@ -196,7 +196,11 @@ class ConfigReader:
             raise NameError('No GroupId in section: ' + section)
 
         if parser.has_option(section, 'buildrequires'):
-            section_config['buildrequires'] = parser.get(section, 'buildrequires')
+            split = parser.get(section, 'buildrequires').split(' ')
+            # workaround for ignoring wrapper builds
+            section_config['buildrequires'] = " ".join(
+                filter(lambda sect: self.read_config_type(parser, sect) != 'wrapper',
+                                                              split))
 
         section_config['scmURL'] = parser.get(section, 'scmurl')
         if parser.has_option(section, 'pnc.buildScript'):
@@ -277,10 +281,9 @@ class ConfigReader:
         logging.info("Configuration file is %s and path %s", os.path.basename(config_file), config_path)
 
         for section in parser.sections():
-            #TODO do something about the wrapper
             config_type = self.read_config_type(parser, section)
-            if section == 'common' or config_type == "bom-builder-meta":
-                logging.debug('Skipping section due to meta-type %s', section)
+            if config_type == "wrapper":
+                logging.warning('Skipping section due to wrappers being unsupported: %s', section)
                 continue
 
             self._do_read_section(config_path, os.path.basename(config_file), package_configs, parser, section)
@@ -295,17 +298,17 @@ class ConfigReader:
             self.get_config(task.name)
 
     def read_config_type(self, parser, section):
-        if parser.has_option(section, 'config_type'):
-            config_type = parser.get(section, 'config_type')
+        if parser.has_option(section, 'type'):
+            config_type = parser.get(section, 'type')
         else:
-            config_type = 'default'
+            config_type = 'maven'
         return config_type
 
     def get_config_type(self, section):
-        if 'config_type' in section:
-            config_type = section['config_type']
+        if 'type' in section:
+            config_type = section['type']
         else:
-            config_type = 'default'
+            config_type = 'maven'
         return config_type
 
 def _contains_equal(input):
@@ -585,3 +588,5 @@ class InterpolationConfigParser(ConfigParser):
                     option, section,
                     "'$' must be followed by '$' or '{', "
                     "found: %r" % (rest,))
+
+cfg = ConfigReader('/home/jmichalo/Applications/pnc-cli/test/resources/cfg_correct.ini')
