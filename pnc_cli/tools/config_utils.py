@@ -417,7 +417,7 @@ class ConfigReader:
             #Jira
             if parser.has_option('common', 'shared_config') and parser.get('common', 'shared_config') is not "":
                 parse_shared_config(common_section, config_dir, parser)
-            if parser.has_option('jobtimeout', 'jobfailureemail'):
+            if parser.has_option('common', 'jobtimeout'):
                 common_section['jobtimeout'] = parser.getint('common', 'jobtimeout')
 
             # If the configuration file has global properties insert these into the common properties map.
