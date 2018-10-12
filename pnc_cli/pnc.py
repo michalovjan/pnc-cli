@@ -126,6 +126,7 @@ parser.add_commands([uc.login,
                      buildconfigsetrecords.list_records_for_build_config_set,
                      users.get_logged_user,
                      makemead.make_mead,
+                     makemead.mead_ini,
                      generate_repo.generate_repo_list,
                      archives.generate_sources_zip])
 parser.add_commands([brewpush.push_build,

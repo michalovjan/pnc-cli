@@ -28,14 +28,13 @@ class ConfigDefaults:
 
 class ConfigReader:
 
-    common_section = {}
     package_configs = {}
     pom_manipulator_config = {}
 
     def __init__(self, config_file, config_defaults=ConfigDefaults):
         self.config_file = config_file
         self.config_defaults = config_defaults
-        (self.common_section, self.package_configs, self.pom_manipulator_config) = self._do_read_config(config_file, config_defaults.pom_manipulator_ext)
+        (self.package_configs, self.pom_manipulator_config) = self._do_read_config(config_file, config_defaults.pom_manipulator_ext)
         self.check_config()
 
     def get_configs(self, artifacts):
@@ -52,7 +51,7 @@ class ConfigReader:
         if artifact and artifact not in self.package_configs:
             raise NoSectionError(artifact)
 
-        config = self.common_section.copy()
+        config = {}
         config.update(self.pom_manipulator_config.copy())
         if artifact and artifact in self.package_configs:
             config.update(self.package_configs[artifact].copy())
@@ -74,7 +73,6 @@ class ConfigReader:
 
         if not artifact:
             config['artifact'] = None
-            config['jobtimeout'] = self.common_section['jobtimeout']
             return config
 
         config['artifact'] = artifact
@@ -85,11 +83,11 @@ class ConfigReader:
             options['properties'] = dict()
 
         options_properties = options['properties']
-        if "redhat-" in config['version'] :
-           if options['properties'].has_key('versionAddSuffix') and options['properties']['versionAddSuffix'] == 'false':
-             logging.info("Skip adding version suffix since versionAddSuffix=false")
-           else:
-            options['properties'].update (dict({'version.suffix' : "redhat-%s" % re.split(".redhat-", config['version'])[1]}))
+        # if "redhat-" in config['version'] :
+        #    if options['properties'].has_key('versionAddSuffix') and options['properties']['versionAddSuffix'] == 'false':
+        #      logging.info("Skip adding version suffix since versionAddSuffix=false")
+        #    else:
+        #     options['properties'].update (dict({'version.suffix' : "redhat-%s" % re.split(".redhat-", config['version'])[1]}))
 
         self.override_config_with_options_prop(config, options_properties, 'dependencyManagement', 'dependencyManagement')
         self.override_config_with_options_prop(config, options_properties, 'pluginManagement', 'pluginManagement')
@@ -116,25 +114,7 @@ class ConfigReader:
                 options['properties'].update (dict({'enforce-skip' : config['skipDeployment']}))
             if 'overrideTransitive' in config:
                 options['properties'].update (dict({'overrideTransitive' : config['overrideTransitive']}))
-
-        #Merge the common section properties into the build properties, do not override if the build has already
-        #set the property
-        temp = self.common_section['options']['properties'].copy()
-        temp.update(options['properties'])
-        options['properties'] = temp.copy()
-        # Do the same for profiles
-        temp = set(self.common_section['options']['profiles'])
-        if 'profiles' in options:
-            temp.update(options['profiles'])
-        options['profiles'] = list(temp)
-
         return config
-
-    def get_artifact_by_package(self, package_name):
-        for artifact, config in self.package_configs.iteritems():
-            if package_name == self.package_configs[artifact]['package']:
-                return artifact
-        return None
 
     def get_packages_and_dependencies(self):
         packages = {}
@@ -193,7 +173,7 @@ class ConfigReader:
     def get_all_scm_urls(self):
         scm_urls = {}
 
-        for package, section in self.package_configs:
+        for package, section in self.package_configs.items():
             logging.debug('Checking section: %s', section)
             if section == "common" \
                     or self.get_config_type(section) == "common"\
@@ -203,31 +183,22 @@ class ConfigReader:
             scm_url = section["scmURL"]
             logging.debug('Got scm_url: %s' % scm_url)
             if scm_url:
-                scm_urls[section] = scm_url
+                scm_urls[package] = scm_url
 
         return scm_urls
 
     def _do_read_section(self, config_path, config_file, package_configs, parser, section):
-        # Hack for backwards compatibility. This should really be controlled by the property
-        # bom-builder-meta but the older configurations do not have that.
-        if set(parser.options(section)) == set(['mapping', 'version']) or set(parser.options(section)) == set(['mapping', 'version', 'package']):
-            logging.debug ("Skipping mapping/version section %s" , section)
-            return
 
         section_config = {}
         package_configs[section] = section_config
         section_config['artifact'] = section
-
-        if parser.has_option(section, 'config_type'):
-            section_config['config_type'] = parser.get(section, 'config_type')
+        if '-' not in section:
+            raise NameError('No GroupId in section: ' + section)
 
         if parser.has_option(section, 'buildrequires'):
             section_config['buildrequires'] = parser.get(section, 'buildrequires')
 
-        section_config['package'] = parser.get(section, 'package')
-        section_config['version'] = parser.get(section, 'version')
-        section_config['substvers'] = string.replace(section_config['version'], "-", "_")
-        section_config['scmURL'] = parser.get(section, 'scmURL')
+        section_config['scmURL'] = parser.get(section, 'scmurl')
         if parser.has_option(section, 'pnc.buildScript'):
             section_config['pnc.buildScript'] = parser.get(section, 'pnc.buildScript')
         if parser.has_option(section, 'pnc.projectName'):
@@ -238,23 +209,24 @@ class ConfigReader:
             section_config['downstreamjobs'] = parser.get(section, 'downstreamjobs')
         else:
             section_config['downstreamjobs'] = None
-        if parser.has_option(section, 'jobtimeout'):
-            section_config['jobtimeout'] = parser.getint(section, 'jobtimeout')
-        else:
-            section_config['jobtimeout'] = parser.getint('common', 'jobtimeout')
+
         options = {}
         section_config['options'] = options
         maven_options = []
+        if parser.has_option(section, 'envs'):
+            envs = utils.split_unescape(parser.get(section, 'envs').replace("\n", ","), ',', '\\')
+            env_dict = dict(x.strip().split('=') for x in envs)
+            options['envs'] = {k: '"{}"'.format(v) for k, v in env_dict.items()}
         if parser.has_option(section, 'scratch'):
             options['scratch'] = 'True'
-        if parser.has_option(section, 'brewpackage'):
-            options['packages'] = [x.strip() for x in parser.get(section, 'brewpackage').split(',')]
+        if parser.has_option(section, 'packages'):
+            options['packages'] = [x.strip() for x in parser.get(section, 'packages').split()]
         if parser.has_option(section, 'goals'):
-            options['goals'] = [x.strip() for x in parser.get(section, 'goals').split(',')]
-        if parser.has_option(section, 'jvmOpts'):
-            options['jvm_options'] = [x.strip() for x in parser.get(section, 'jvmOpts').split(',')]
-        if parser.has_option(section, 'mavenOpts'):
-            maven_options = [x.strip() for x in parser.get(section, 'mavenOpts').split(',')]
+            options['goals'] = [x.strip() for x in parser.get(section, 'goals').split()]
+        if parser.has_option(section, 'jvm_options'):
+            options['jvm_options'] = [x.strip() for x in parser.get(section, 'jvm_options').split()]
+        if parser.has_option(section, 'maven_options'):
+            maven_options = [x.strip() for x in parser.get(section, 'maven_options').split()]
         if parser.has_option(section, 'errors'):
             options['errors'] = True
         if maven_options:
@@ -264,98 +236,26 @@ class ConfigReader:
         if parser.has_option(section, 'patches'):
             options['patches'] = parser.get(section, 'patches')
         if parser.has_option(section, 'profiles'):
-            options['profiles'] = [x.strip() for x in parser.get(section, 'profiles').split(',')]
+            options['profiles'] = [x.strip() for x in parser.get(section, 'profiles').split(' ')]
         if parser.has_option(section, 'properties'):
             properties = utils.split_unescape(parser.get(section, 'properties').replace("\n", ","), ',', '\\')
-            options['properties'] = dict(x.strip().split('=') for x in properties if (x != '' and x != '\\'))
+            property_dict = dict((x.strip().split('=')) if _contains_equal(x) else [x, ''] for x in properties if (x != '' and x != '\\'))
+            options['properties'] = {k: '"{}"'.format(v) for k, v in property_dict.items()}
         if parser.has_option(section, 'defaultRepoGroup'):
             options['defaultRepoGroup'] = parser.get(section, 'defaultRepoGroup')
 
         #If versionOverride=true, then parse the version.override from versions, pass it to pm extension later
-        if 'properties' in options and options['properties'].has_key('versionOverride') and options['properties']['versionOverride'] == 'true':
-            options['properties']['version.override'] = re.split(".redhat-", section_config['version'])[0]
+        # if 'properties' in options and options['properties'].has_key('versionOverride') and options['properties']['versionOverride'] == 'true':
+        #     options['properties']['version.override'] = re.split(".redhat-", section_config['version'])[0]
         #Add project.src.skip option since quickstart don't need source plugin
         if 'properties' in options and options['properties'].has_key('project.src.skip') and options['properties']['project.src.skip'] == 'true':
             options['properties']['project.src.skip'] = 'true'
         # Test for if ip.config.sha exists in the current properties set. If it does and only if the value of 'ip.confgi.sha' is empty, fill it in
         # with the full SHA value.
         if 'properties' in options and options['properties'].has_key('ip.config.sha') and options['properties']['ip.config.sha']=='':
-                ipsha = get_scm_info(config_path, read_only=True, filePath=config_file).commit_id
-                logging.debug("ip.config.sha updated to %s ", ipsha)
-                options['properties']['ip.config.sha'] = ipsha
-
-    # read the config file,and parse the 'from common.cfg import a b,import brms.cfg' line
-    def read_and_load(self, include):
-        parser = InterpolationConfigParser()
-        # pom_manipulator_config1 = {}
-        package_configs = parser.defaults()
-        config = str(include)
-        if config is not "":
-          # from .. import ..,import ..
-            if config.__contains__(','):
-                configs = config.split(',')
-                for item in configs:
-                    self.parseLine(item, parser, package_configs)
-            else:
-          # from .. import ..
-                self.parseLine(config, parser, package_configs)
-        return package_configs
-
-
-    def parseLine(self, item, parser, package_configs):
-         dir = self.get_config_dir()
-         include_sections = []
-         if item is not "":
-            if item.strip().startswith('from'):
-                # from x.cfg import xmlpull annotation
-                file_section = item.replace('from', '').strip().split('import')
-                file = file_section[0].strip()
-                config_file = dir + '/' + file
-                if len(file_section) != 2:
-                    raise SyntaxError("Invalid syntax for include; possible missing import on '%s'" %item)
-                if file_section[1].strip().__contains__(' '):
-                    section = re.split("\\s+", file_section[1].strip())
-                    for sec in section:
-                        include_sections.append(sec)
-                else:
-                    include_sections.append(file_section[1].strip())
-            elif item.strip().startswith("import"):
-                # import x.cfg
-                file = item.replace('import', '').strip()
-                config_file = dir + "/" + file
-            else:
-                raise SyntaxError("Invalid syntax: %s ,Please verify that the syntax is correct " %item)
-
-            parser.read(config_file)
-            if os.path.dirname(config_file):
-                config_path = os.path.dirname(config_file)
-            else:
-                config_path = os.getcwd()
-                logging.info("Configuration file is %s and path %s", os.path.basename(config_file),
-                             +                             config_path)
-            if include_sections.__len__() > 0:
-                for include_section in include_sections:
-                    if include_section is not "":
-                        if not parser._sections.get(include_section):
-                            raise NoSectionError( "No such %s section exists in %s configuration" % (include_section, file))
-                        parser._sections.get(include_section)['buildrequires'] = ''
-                        parser._sections.get(include_section)['config_type'] = 'bom-builder-meta'
-                        package_configs[include_section] = parser._sections.get(include_section)
-            else:
-                for section in parser.sections():
-                    config_type = self.read_config_type(parser, section)
-                    # we need to ignore two bom-builder
-                    if section == 'common' or config_type == "bom-builder":
-                        logging.debug('Skipping import for section %s', section)
-                        continue
-
-                    if not parser._sections.get(section):
-                        raise NoSectionError("No such %s section exists in %s configuration" % (section, file))
-                    parser._sections.get(section)['buildrequires'] = ''
-                    parser._sections.get(section)['config_type'] = 'bom-builder-meta'
-                    package_configs[section] = parser._sections.get(section)
-
-
+            ipsha = get_scm_info(config_path, read_only=True, filePath=config_file).commit_id
+            logging.debug("ip.config.sha updated to %s ", ipsha)
+            options['properties']['ip.config.sha'] = ipsha
 
     def _do_read_config(self, config_file, pommanipext):
         """Reads config for a single job defined by section."""
@@ -363,70 +263,12 @@ class ConfigReader:
         dataset = parser.read(config_file)
         if config_file not in dataset:
             raise IOError("Config file %s not found." % config_file)
-        if parser.has_option('common','include'):
-            include = parser.get('common', 'include')
-            if include is not "":
-                sections_ = self.read_and_load(include)
-                for section_ in sections_:
-                    if parser.has_section(section_):
-                        raise DuplicateSectionError( "The config section [%s] is existed in %s and include %s cfg file" % ( section_, config_file, re.split("\\s+", include.strip())[1]))
-                parser._sections.update(sections_)
 
         pom_manipulator_config = {}
-        common_section = {}
         package_configs = {}
 
         if pommanipext and pommanipext != '' and pommanipext != 'None': #TODO ref: remove none check, it is passed over cmd line in jenkins build
             parse_pom_manipulator_ext(pom_manipulator_config, parser, pommanipext)
-
-        if not parser.has_section('common'):
-            logging.error('Mandatory common section missing from configuration file.')
-            raise NoSectionError, 'Mandatory common section missing from configuration file.'
-        common_section['tag'] = parser.get('common', 'tag')
-        common_section['target'] = parser.get('common', 'target')
-        common_section['jobprefix'] = parser.get('common', 'jobprefix')
-        common_section['jobciprefix'] = parser.get('common', 'jobciprefix')
-        common_section['jobjdk'] = parser.get('common', 'jobjdk')
-        if parser.has_option('common', 'mvnver'):
-            common_section['mvnver'] = parser.get('common', 'mvnver')
-        if parser.has_option('common', 'skiptests'):
-            common_section['skiptests'] = parser.get('common', 'skiptests')
-        if parser.has_option('common', 'base'):
-            common_section['base'] = parser.get('common', 'base')
-        if parser.has_option('common', 'citemplate'):
-            common_section['citemplate'] = parser.get('common', 'citemplate')
-        if parser.has_option('common', 'jenkinstemplate'):
-            common_section['jenkinstemplate'] = parser.get('common', 'jenkinstemplate')
-        if parser.has_option('common', 'product_name'):
-            common_section['product_name'] = parser.get('common', 'product_name')
-
-        if parser.has_option('common', 'include'):
-            common_section['include'] = parser.get('common', 'include')
-
-        common_section['jobfailureemail'] = parser.get('common', 'jobfailureemail')
-
-        config_dir = utils.get_dir(config_file)
-
-        #Jira
-        if parser.has_option('common', 'shared_config') and parser.get('common', 'shared_config') is not "":
-            parse_shared_config(common_section, config_dir, parser)
-
-        common_section['jobtimeout'] = parser.getint('common', 'jobtimeout')
-
-        common_section['options'] = {}
-        # If the configuration file has global properties insert these into the common properties map.
-        # These may be overridden later by particular properties.
-        if parser.has_option('common', 'globalproperties'):
-            common_section['options']['properties'] = dict(x.strip().split('=') for x in parser.get('common', 'globalproperties').replace(",\n", ",").split(','))
-        else:
-            # Always ensure properties has a valid dictionary so code below doesn't need multiple checks.
-            common_section['options']['properties'] = {}
-        # The same for global profiles
-        if parser.has_option('common', 'globalprofiles'):
-            common_section['options']['profiles'] = [x.strip() for x in parser.get('common', 'globalprofiles').split(',')]
-        else:
-            # Always ensure profiles has a valid list so code below doesn't need multiple checks.
-            common_section['options']['profiles'] = []
 
         if os.path.dirname(config_file):
             config_path = os.path.dirname(config_file)
@@ -435,14 +277,15 @@ class ConfigReader:
         logging.info("Configuration file is %s and path %s", os.path.basename(config_file), config_path)
 
         for section in parser.sections():
+            #TODO do something about the wrapper
             config_type = self.read_config_type(parser, section)
             if section == 'common' or config_type == "bom-builder-meta":
-                logging.debug ('Skipping section due to meta-type %s', section)
+                logging.debug('Skipping section due to meta-type %s', section)
                 continue
 
             self._do_read_section(config_path, os.path.basename(config_file), package_configs, parser, section)
 
-        return (common_section, package_configs, pom_manipulator_config)
+        return package_configs, pom_manipulator_config
 
     def is_package_configured(self, package):
         return set(package.split(',')).issubset(self.package_configs)
@@ -450,13 +293,6 @@ class ConfigReader:
     def check_config(self):
         for key, task in self.get_tasks().get_all().iteritems():
             self.get_config(task.name)
-
-    def get_package_names_for_sections(self, sections):
-        packages = list()
-        for section in sections:
-            section_config = self.get_config(section)
-            packages.append(section_config['package'])
-        return packages
 
     def read_config_type(self, parser, section):
         if parser.has_option(section, 'config_type'):
@@ -472,6 +308,10 @@ class ConfigReader:
             config_type = 'default'
         return config_type
 
+def _contains_equal(input):
+    if input.__contains__('='):
+        return True
+    logging.warning("Property: " + input + " has no value.")
 
 def read_value_add_version_if_not_present(parser, pommanipext, pommanipext_property):
     # If it already includes an inline version don't append the childversion
@@ -522,41 +362,6 @@ def parse_pom_manipulator_ext(params, parser, pommanipext):
 
     if config_has_option(parser, pommanipext, 'overrideTransitive', False):
         params['overrideTransitive'] = parser.get(pommanipext, 'overrideTransitive')
-
-#TODO ref: remove parameters that are not part of config file
-def parse_shared_config(common_section, config_dir, parser):
-    shared_config_file = parser.get('common', 'shared_config')
-    if os.path.isabs(shared_config_file):
-        shared_cfg_path = shared_config_file
-    else:
-        shared_cfg_path = os.path.join(config_dir, shared_config_file)
-    common_section['shared_config'] = shared_cfg_path
-    if parser.has_option('common', 'jira.project_key'):
-        common_section['jira'] = {}
-        common_section['jira']['project_key'] = parser.get('common', 'jira.project_key')
-        if parser.has_option('common', 'jira.version_project'):
-            version_project = parser.get('common', 'jira.version_project')
-            common_section['jira']['version_project'] = version_project
-            common_section['jira']['version_label'] = "%s-%s" % (
-               version_project.lower(), parser.get(version_project, 'version'))
-            #TODO: make jira.rapid_view required when IPINF-192 is done
-            if parser.has_option('common', 'jira.rapid_view'):
-                common_section['jira']['rapid_view'] = parser.get('common', 'jira.rapid_view')
-        common_section['jira']['projects'] = parser.sections()
-    shared_config = InterpolationConfigParser()
-    dataset = shared_config.read(shared_cfg_path)
-    if shared_cfg_path not in dataset:
-        raise IOError("Config file %s not found." % shared_cfg_path)
-    if 'jira' in common_section:
-        common_section['jira'].update(shared_config.items('jira'))
-    for sec in shared_config.sections():
-        if sec == 'jira':
-            continue
-        if sec in common_section:
-            raise ValueError("Section %s is both in product-specific config"
-                             "and shared config. " % sec)
-        common_section[sec] = dict(shared_config.items(sec))
-
 
 """ Dictionary with following structure: config file name => ConfigParser. """
 config_parser_cache = {}

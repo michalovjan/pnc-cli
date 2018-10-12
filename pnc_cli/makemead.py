@@ -17,7 +17,8 @@ from pnc_cli import productversions
 from pnc_cli import projects
 from pnc_cli import repositoryconfigurations
 from pnc_cli.buildconfigurations import get_build_configuration_by_name
-from pnc_cli.tools.config_utils import ConfigReader
+from pnc_cli.tools.config_utils import ConfigReader as MeadReader
+from pnc_cli.tools.config_ini_utils import ConfigReader as IniReader
 
 
 @arg('-c', '--config', help='Make-mead style configuration file possibly extended with pnc.* data fields.')
@@ -39,17 +40,41 @@ def make_mead(config=None, run_build=False, environment=1, sufix="", product_nam
     :param config: Make Mead config name
     :return:
     """
-    ret=make_mead_impl(config, run_build, environment, sufix, product_name, product_version, look_up_only, clean_group)
+    ret=make_mead_conf(config, run_build, environment, sufix, product_name, product_version, look_up_only, clean_group)
     if type(ret) == int and ret != 0:
         sys.exit(ret)
     return ret
 
-def make_mead_impl(config, run_build, environment, sufix, product_name, product_version, look_up_only, clean_group):
+@arg('-c', '--config', help='Mead-INI style configuration file')
+@arg('-b', '--run_build', help='Run Build')
+@arg('-e', '--environment', help='PNC Environment ID')
+@arg('-s', '--sufix', help='Adding suffix to artifact\'s name')
+@arg('-p', '--product_name', help='Product name')
+@arg('-v', '--product_version', help='Product version')
+@arg('--look-up-only', help="""You can do a partial import by a config and specify, which Build Configurations
+ should be looked up by name. You can specify multiple sections and separate them by comma (no spaces should be included).
+ Example: --look-up-only jdg-infinispan
+ Will look up jdg-infinispan section and process a look up of BC by name (jdg-infinispan-${version_field}.
+""")
+@arg('--clean-group', help='Clean target BuildGroup config from old configurations before adding new ones.')
+def mead_ini(config=None, run_build=False, environment=1, sufix="", product_name=None, product_version=None,
+             look_up_only="", clean_group=False):
+    """
+    Create Build group based on Mead-Ini configuration file
+    :param config: Mead Ini config name
+    :return:
+    """
+    ret=mead_ini_conf(config, run_build, environment, sufix, product_name, product_version, look_up_only, clean_group)
+    if type(ret) == int and ret != 0:
+        sys.exit(ret)
+    return ret
+
+def make_mead_conf(config, run_build, environment, sufix, product_name, product_version, look_up_only, clean_group):
     if not validate_input_parameters(config, product_name, product_version):
         return 1
 
     try:
-        config_reader = ConfigReader(config)
+        config_reader = MeadReader(config)
     except NoSectionError as e:
         logging.error('Missing config in %s (%r)', config, e)
         return 1
@@ -57,6 +82,24 @@ def make_mead_impl(config, run_build, environment, sufix, product_name, product_
         logging.error(err)
         return 1
 
+    return make_mead_impl(config_reader, run_build, environment, sufix, product_name, product_version, look_up_only, clean_group)
+
+def mead_ini_conf(config, run_build, environment, sufix, product_name, product_version, look_up_only, clean_group):
+    if not validate_input_parameters(config, product_name, product_version):
+        return 1
+
+    try:
+        config_reader = IniReader(config)
+    except NoSectionError as e:
+        logging.error('Missing config in %s (%r)', config, e)
+        return 1
+    except Error, err:
+        logging.error(err)
+        return 1
+
+    return make_mead_impl(config_reader, run_build, environment, sufix, product_name, product_version, look_up_only, clean_group, is_ini=True)
+
+def make_mead_impl(config_reader, run_build, environment, sufix, product_name, product_version, look_up_only, clean_group, is_ini=False):
     ids = dict()
     (subarts, deps_dict) = config_reader.get_dependency_structure()
     packages = config_reader.get_packages_and_dependencies()
@@ -99,14 +142,22 @@ def make_mead_impl(config, run_build, environment, sufix, product_name, product_
             project_name = art_params['pnc.projectName']
         else:
             logging.debug("Using default project name " + artifact)
-            project_name = artifact
+            if is_ini:
+                project_name = artifact.split("-",1)[0]
+            else:
+                project_name = artifact
 
         logging.debug(art_params)
-        package = art_params['package']
-        version = art_params['version']
+
+        if is_ini:
+            artifact_name = subartifact + '-' + sufix
+        else:
+            package = art_params['package']
+            version = art_params['version']
+            artifact_name = package + "-" + re.sub("[\-\.]*redhat\-\d+", "", version) + sufix
+
         scm_url = art_params['scmURL']
         (scm_repo_url, scm_revision) = scm_url.split("#", 2)
-        artifact_name = package + "-" + re.sub("[\-\.]*redhat\-\d+", "", version) + sufix
 
         #WA for subfolder builds (? in SCM url)
         if "?" in scm_repo_url:
