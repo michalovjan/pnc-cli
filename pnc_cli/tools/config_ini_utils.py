@@ -588,5 +588,3 @@ class InterpolationConfigParser(ConfigParser):
                     option, section,
                     "'$' must be followed by '$' or '{', "
                     "found: %r" % (rest,))
-
-cfg = ConfigReader('/home/jmichalo/Applications/pnc-cli/test/resources/cfg_correct.ini')
