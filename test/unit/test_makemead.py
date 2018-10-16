@@ -1,3 +1,5 @@
+import os
+
 __author__ = "jmichalo"
 
 import pytest
@@ -7,23 +9,23 @@ from pnc_cli.tools.config_ini_utils import ConfigReader as IniReader
 
 def test_ini_parser_wrong_section_name():
     with pytest.raises(NameError):
-        IniReader('/home/jmichalo/Applications/pnc-cli/test/resources/cfg_badsectionname.ini')
+        IniReader('test/resources/cfg_badsectionname.ini')
 
 
 def test_ini_parser_no_scmurl():
     with pytest.raises(NoOptionError):
-        IniReader('/home/jmichalo/Applications/pnc-cli/test/resources/cfg_missingurl.ini')
+        IniReader('test/resources/cfg_missingurl.ini')
 
 
 def test_ini_parser_required_build_missing():
     with pytest.raises(NoSectionError):
-        IniReader('/home/jmichalo/Applications/pnc-cli/test/resources/cfg_requiresnotincfg.ini')
+        IniReader('test/resources/cfg_requiresnotincfg.ini')
 
 
 def test_ini_parser_has_correct_output():
-    cfg = IniReader('/home/jmichalo/Applications/pnc-cli/test/resources/cfg_correct.ini')
+    cfg = IniReader('test/resources/cfg_correct.ini')
     arts, deps = cfg.get_dependency_structure()
-    assert len(arts) is 6
+    assert len(arts) is 5
 
     art = cfg.get_config('org.example.test-a')
     assert {'scmURL', 'artifact', 'options'}.issubset(art.keys())
@@ -37,7 +39,7 @@ def test_ini_parser_has_correct_output():
     assert {'profile1', 'profile2', 'profile3'}.issubset(options.get('profiles'))
 
     dependencies = cfg.get_packages_and_dependencies()
-    assert {'org.example.test-a','org.example.test-b','org.example.test-c','org.example.test-d','org.example.test-e','c-wrapper'}\
+    assert {'org.example.test-a','org.example.test-b','org.example.test-c','org.example.test-d','org.example.test-e'}\
         .issubset(dependencies.keys())
 
     e_deps = dependencies.get('org.example.test-e')
