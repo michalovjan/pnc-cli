@@ -2,6 +2,7 @@ import random
 import string
 from mock import MagicMock
 import pytest
+import logging
 
 __author__ = 'thauser'
 
@@ -40,3 +41,23 @@ def assert_raises_valueerror(api, function, **kwargs):
 def assert_raises_typeerror(api, function, **kwargs):
     with pytest.raises(TypeError):
         getattr(api, function)(invalid_param=1, **kwargs)
+
+# https://stackoverflow.com/questions/899067/how-should-i-verify-a-log-message-when-testing-python-code-under-nose/
+class MockLoggingHandler(logging.Handler):
+    """Mock logging handler to check for expected logs."""
+
+    def __init__(self, *args, **kwargs):
+        self.reset()
+        logging.Handler.__init__(self, *args, **kwargs)
+
+    def emit(self, record):
+        self.messages[record.levelname.lower()].append(record.getMessage())
+
+    def reset(self):
+        self.messages = {
+            'debug': [],
+            'info': [],
+            'warning': [],
+            'error': [],
+            'critical': [],
+        }

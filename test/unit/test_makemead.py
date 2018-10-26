@@ -1,10 +1,19 @@
-import os
-
+import logging
 __author__ = "jmichalo"
 
 import pytest
+from test.testutils import MockLoggingHandler
 from ConfigParser import NoOptionError, NoSectionError
 from pnc_cli.tools.config_ini_utils import ConfigReader as IniReader
+
+
+def test_ini_parser_warning_on_singular_property():
+    logger = logging.getLogger()
+    log_catcher = MockLoggingHandler()
+    logger.addHandler(log_catcher)
+    IniReader('test/resources/cfg_singularproperty.ini')
+    warning = log_catcher.messages.get("warning").pop()
+    assert warning == 'Property: singular has no value.'
 
 
 def test_ini_parser_wrong_section_name():
@@ -29,7 +38,7 @@ def test_ini_parser_has_correct_output():
 
     art = cfg.get_config('org.example.test-a')
     assert {'scmURL', 'artifact', 'options'}.issubset(art.keys())
-    assert art.get('scmURL') == 'git://git.engineering.redhat.com/users/mikeb/maven-deptest.git?a#74b3dd7'
+    assert art.get('scmURL') == 'git://github.com:totallylegit/url.git?a#351da864abc'
 
     options = art.get('options')
     assert {'profiles', 'jvm_options', 'properties', 'goals', 'packages', 'envs'}.issubset(options.keys())
