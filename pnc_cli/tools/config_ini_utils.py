@@ -3,8 +3,7 @@
 import logging
 import os
 import re
-import string
-from ConfigParser import ConfigParser, NoOptionError, NoSectionError, DuplicateSectionError
+from ConfigParser import ConfigParser, NoOptionError, NoSectionError
 
 import pnc_cli.tools.utils as utils
 from pnc_cli.tools.scm_utils import ScmInfo, get_scm_info
@@ -83,11 +82,6 @@ class ConfigReader:
             options['properties'] = dict()
 
         options_properties = options['properties']
-        # if "redhat-" in config['version'] :
-        #    if options['properties'].has_key('versionAddSuffix') and options['properties']['versionAddSuffix'] == 'false':
-        #      logging.info("Skip adding version suffix since versionAddSuffix=false")
-        #    else:
-        #     options['properties'].update (dict({'version.suffix' : "redhat-%s" % re.split(".redhat-", config['version'])[1]}))
 
         self.override_config_with_options_prop(config, options_properties, 'dependencyManagement', 'dependencyManagement')
         self.override_config_with_options_prop(config, options_properties, 'pluginManagement', 'pluginManagement')
